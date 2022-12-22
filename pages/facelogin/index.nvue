@@ -1,0 +1,304 @@
+<template>
+	<view class="page-container">
+		<view class="test">
+			<button @click="faceLogin">开始识别</button>
+			<button @click="close">结束</button>
+		</view>
+		<view class="container-message">
+			<text class="message">{{message}}</text>
+		</view>
+		<view class="live-camera-container">
+			<view class="live-camera" :style="{ width: windowWidth, height: windowHeight }">
+				<live-pusher id="livePusher" ref="livePusher" class="livePusher" mode="FHD" beauty="0" whiteness="0"
+					:aspect="aspect" min-bitrate="1000" audio-quality="16KHz" device-position="front"
+					orientation='horizontal' :auto-focus="true" :muted="true" :enable-camera="true" :enable-mic="false"
+					:zoom="false" @statechange="statechange" :style="{ width: windowWidth, height: windowHeight }">
+				</live-pusher>
+			</view>
+		</view>
+		<cover-image class="menu-mask" src="/static/border.png"></cover-image>
+	</view>
+</template>
+
+<script>
+	import {
+		pathToBase64
+	} from '../../node_modules/image-tools/index.js'
+	let _this = null;
+	export default {
+		data() {
+			return {
+				poenCarmeInterval: null, //打开相机的轮询
+				aspect: '2:3', //比例
+				windowWidth: '', //屏幕可用宽度
+				windowHeight: '', //屏幕可用高度
+				camerastate: false, //相机准备好了
+				livePusher: null, //流视频对象
+				snapshotsrc: null, //快照,
+				startTime: new Date(),
+				check: false,
+				socket: null,
+				toId: null,
+				open: false,
+				message:'请正对摄像头',
+			};
+		},
+		onLoad(e) {
+			_this = this;
+			this.initCamera();
+		},
+		onReady() {
+			this.livePusher = uni.createLivePusherContext('livePusher', this);
+			this.startPreview(); //开启预览并设置摄像头
+			this.poenCarme();
+			// setTimeout(() => {
+			// 	this.faceLogin();
+			// }, 1000)
+		},
+		methods: {
+
+			//轮询打开
+			poenCarme() {
+				//#ifdef APP-PLUS
+				if (plus.os.name == 'Android') {
+					this.poenCarmeInterval = setInterval(function() {
+						console.log(_this.camerastate);
+						if (!_this.camerastate) _this.startPreview();
+					}, 2500);
+				}
+				//#endif
+			},
+			//初始化相机
+			initCamera() {
+				uni.getSystemInfo({
+					success: function(res) {
+						_this.windowWidth = res.windowWidth;
+						_this.windowHeight = res.windowHeight;
+						let zcs = _this.aliquot(_this.windowWidth, _this.windowHeight);
+						_this.aspect = (_this.windowWidth / zcs) + ':' + (_this.windowHeight / zcs);
+						console.log('画面比例：' + _this.aspect);
+					}
+				});
+				this.message = `请正对摄像头`;
+			},
+
+			//整除数计算
+			aliquot(x, y) {
+				if (x % y == 0) return y;
+				return this.aliquot(y, x % y);
+			},
+
+			//开始预览
+			startPreview() {
+				this.livePusher.startPreview({
+					success: a => {
+						console.log(a)
+					}
+				});
+			},
+
+			//停止预览
+			stopPreview() {
+				this.livePusher.stopPreview({
+					success: a => {
+						_this.camerastate = false; //标记相机未启动
+					}
+				});
+			},
+
+			//状态
+			statechange(e) {
+				//状态改变
+				console.log(e);
+				if (e.detail.code == 1007) {
+					_this.camerastate = true;
+				} else if (e.detail.code == -1301) {
+					_this.camerastate = false;
+				}
+			},
+
+
+			//返回
+			back() {
+				uni.navigateBack();
+			},
+
+			//抓拍
+			snapshot() {
+				// 人脸采样
+				this.faceCheck()
+			},
+
+			//反转
+			flip() {
+				this.livePusher.switchCamera();
+			},
+
+			//设置
+			setImage() {
+				let pages = getCurrentPages();
+				let prevPage = pages[pages.length - 2]; //上一个页面
+
+				//直接调用上一个页面的setImage()方法，把数据存到上一个页面中去
+				prevPage.$vm.setImage({
+					path: _this.snapshotsrc
+				});
+			},
+			close() {
+				this.message = '请正对摄像头';
+				if (this.open) {
+					uni.closeSocket({});
+				}
+			},
+			faceLogin() {
+				this.message = '开始人脸识别！';
+				this.check = false;
+				this.startTime = new Date().getTime();
+				if (this.open) {
+					uni.closeSocket({});
+				}
+				this.socket = uni.connectSocket({
+					url: 'ws://ilive.esto.cn/eliga/api/user/face/login?deviceSn=L01', //仅为示例，并非真实接口地址。
+					success: () => {
+						console.log('success');
+					},
+					fail: () => {
+						console.log('fail');
+					},
+					complete: () => {
+						console.log('complete')
+					}
+				});
+				uni.onSocketOpen((res) => {
+					this.open = true;
+					console.log('WebSocket连接已打开！');
+				});
+				let timer = null;
+				uni.onSocketMessage((res) => {
+					const data = res.data;
+					console.log(data)
+					if (data !== 'pong') {
+						const json = JSON.parse(data);
+						if (json.code === 'faceCheckResult') {
+							this.check = false;
+						} else if (json.code === 'checkfail') {
+							this.check = false;
+						} else if (json.code === 'start') {
+							this.message = '正在检测...';
+							timer = setInterval(() => {
+								this.faceCheck()
+							}, 200);
+						} else if (json.code === 'ok') {
+							clearInterval(timer);
+							console.log('识别成功！');
+							this.message = '识别成功！';
+						} else if (json.code === '500') {
+
+						}
+					}
+				});
+				uni.onSocketClose((res) => {
+					console.log('WebSocket 已关闭！');
+					this.open = false
+				});
+				uni.onSocketError(function(res) {
+					console.log('WebSocket连接打开失败，请检查！');
+				})
+			},
+			faceCheck() {
+				if (this.check) {
+					return;
+				}
+				this.check = true;
+				this.livePusher.snapshot({
+					success: e => {
+						console.log(e.message.tempImagePath);
+						uni.getImageInfo({
+							src: e.message.tempImagePath,
+							success: (o) => {
+								console.log(o)
+								uni.compressImage({
+									src: e.message.tempImagePath,
+									width: `${o.width/o.height*200}px`,
+									height: `200px`,
+									success: (res) => {
+										pathToBase64(res.tempFilePath).then(base64 => {
+											uni.sendSocketMessage({
+												data: JSON.stringify({
+													code: 'image',
+													image: base64
+												})
+											})
+										})
+									},
+									error: (err) => {
+										console.log(err);
+									},
+									complete: () => {
+										console.log('complete')
+									}
+								})
+							}
+						})
+					}
+				});
+			}
+		}
+	};
+</script>
+
+<style lang="scss">
+	.page-container {
+		position: absolute;
+		top: 0;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		background-color: #fff;
+	}
+
+	.test {
+		position: absolute;
+		left: 0;
+		top: 0;
+	}
+
+	.container-message {
+		position: absolute;
+		top: 40rpx;
+		left: 235rpx;
+		height: 30rpx;
+		width: 280rpx;
+		.message {
+			font-size: 20rpx;
+			color: #3c3c3c;
+			text-align: center;
+		}
+	}
+
+	.live-camera {
+		// justify-content: center;
+		// align-items: center;
+		// top: -30rpx;
+
+		&-container {
+			position: absolute;
+			top: 80rpx;
+			left: 235rpx;
+			height: 280rpx;
+			width: 280rpx;
+			overflow: hidden;
+			justify-content: center;
+			align-items: center;
+		}
+	}
+
+	.menu-mask {
+		position: absolute;
+		top: 80rpx;
+		left: 235rpx;
+		height: 280rpx;
+		width: 280rpx;
+		z-index: 98;
+	}
+</style>

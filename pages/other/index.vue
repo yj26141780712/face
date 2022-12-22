@@ -1,0 +1,407 @@
+<template>
+	<view class="live-camera" :style="{ width: windowWidth, height: windowHeight }">
+		<live-pusher
+			id="livePusher"
+			ref="livePusher"
+			class="livePusher"
+			mode="FHD"
+			beauty="0"
+			whiteness="0"
+			:aspect="aspect"
+			min-bitrate="1000"
+			audio-quality="16KHz"
+			device-position="back"
+			:auto-focus="true"
+			:muted="true"
+			:enable-camera="true"
+			:enable-mic="false"
+			:zoom="false"
+			@statechange="statechange"
+			:style="{ width: windowWidth, height: windowHeight }"
+		></live-pusher>
+
+		<view class="menu">
+			<!--底部菜单区域背景-->
+			<cover-image class="menu-mask" src="/static/live-camera/bar.png"></cover-image>
+
+			<!--返回键-->
+			<cover-image class="menu-back" @tap="back" src="/static/live-camera/back.png"></cover-image>
+
+			<!--快门键-->
+			<cover-image class="menu-snapshot" @tap="snapshot" src="/static/live-camera/shutter.png"></cover-image>
+
+			<!--反转键-->
+			<cover-image class="menu-flip" @tap="flip" src="/static/live-camera/flip.png"></cover-image>
+		</view>
+	</view>
+</template>
+
+<script>
+let _this = null;
+export default {
+	data() {
+		return {
+			poenCarmeInterval:null,//打开相机的轮询
+			aspect: '2:3', //比例
+			windowWidth: '', //屏幕可用宽度
+			windowHeight: '', //屏幕可用高度
+			camerastate: false, //相机准备好了
+			livePusher: null, //流视频对象
+			snapshotsrc: null //快照
+		};
+	},
+	onLoad(e) {
+		_this = this;
+		this.initCamera();
+	},
+	onReady() {
+		this.livePusher = uni.createLivePusherContext('livePusher', this);
+		this.startPreview(); //开启预览并设置摄像头
+		this.poenCarme();
+	},
+	methods: {
+		
+		//轮询打开
+		poenCarme(){
+			//#ifdef APP-PLUS
+			if (plus.os.name == 'Android') {
+				this.poenCarmeInterval = setInterval(function() {
+					console.log(_this.camerastate);
+					if (!_this.camerastate) _this.startPreview();
+				}, 2500);
+			}
+			//#endif
+		},
+		//初始化相机
+		initCamera() {
+			uni.getSystemInfo({
+				success: function(res) {
+					_this.windowWidth = res.windowWidth;
+					_this.windowHeight = res.windowHeight;
+					let zcs = _this.aliquot(_this.windowWidth,_this.windowHeight);
+					_this.aspect = (_this.windowWidth/zcs)+':'+(_this.windowHeight/zcs);
+					console.log('画面比例：'+_this.aspect);
+				}
+			});
+		},
+		
+		//整除数计算
+		aliquot(x, y) {
+			if (x % y == 0) return y;
+			return this.aliquot(y, x % y);
+		},
+
+		//开始预览
+		startPreview() {
+			this.livePusher.startPreview({
+				success: a => {
+					console.log(a)
+					this.livePusher.switchCamera();
+				}
+			});
+		},
+		
+		//停止预览
+		stopPreview() {
+			this.livePusher.stopPreview({
+				success: a => {
+					_this.camerastate = false; //标记相机未启动
+				}
+			});
+		},
+		
+		//状态
+		statechange(e) {
+			//状态改变
+			console.log(e);
+			if (e.detail.code == 1007) {
+				_this.camerastate = true;
+			} else if (e.detail.code == -1301) {
+				_this.camerastate = false;
+			}
+		},
+		
+
+		//返回
+		back() {
+			uni.navigateBack();
+		},
+
+		//抓拍
+		snapshot() {
+			//震动
+			uni.vibrateShort({
+			    success: function () {
+			        console.log('success');
+			    }
+			});
+			//拍照
+			this.livePusher.snapshot({
+				success: e => {
+					_this.snapshotsrc = e.message.tempImagePath;
+					_this.stopPreview();
+					_this.setImage();
+					uni.navigateBack();
+				}
+			});
+		},
+
+		//反转
+		flip() {
+			this.livePusher.switchCamera();
+		},
+
+		//设置
+		setImage() {
+			let pages = getCurrentPages();
+			let prevPage = pages[pages.length - 2]; //上一个页面
+
+			//直接调用上一个页面的setImage()方法，把数据存到上一个页面中去
+			prevPage.$vm.setImage({ path: _this.snapshotsrc });
+		}
+	}
+};
+</script>
+
+<style lang="scss">
+.live-camera {
+	justify-content: center;
+	align-items: center;
+	.menu {
+		position: absolute;
+		left: 0;
+		bottom: 0;
+		width: 750rpx;
+		height: 180rpx;
+		z-index: 98;
+		align-items: center;
+		justify-content: center;
+		.menu-mask {
+			position: absolute;
+			left: 0;
+			bottom: 0;
+			width: 750rpx;
+			height: 180rpx;
+			z-index: 98;
+		}
+		.menu-back {
+			position: absolute;
+			left: 30rpx;
+			bottom: 50rpx;
+			width: 80rpx;
+			height: 80rpx;
+			z-index: 99;
+			align-items: center;
+			justify-content: center;
+		}
+		.menu-snapshot {
+			width: 130rpx;
+			height: 130rpx;
+			z-index: 99;
+		}
+		.menu-flip {
+			position: absolute;
+			right: 30rpx;
+			bottom: 50rpx;
+			width: 80rpx;
+			height: 80rpx;
+			z-index: 99;
+			align-items: center;
+			justify-content: center;
+		}
+	}
+}
+</style>
+
+<!-- <template>
+	<view class="page-container">
+		<view class="title1">
+			<text class="message">{{ title1 }}</text>
+		</view>
+		<view class="title2">
+			<text class="message">{{ title2 }}</text>
+		</view>
+		<view class="live-camera-container">
+			<view class="live-camera" :style="{ width: windowWidth, height: windowHeight }">
+				<live-pusher id="livePusher" ref="livePusher" class="livePusher" mode="FHD" beauty="0" whiteness="0"
+					:aspect="aspect" min-bitrate="1000" audio-quality="16KHz" device-position="front"
+					orientation='vertical' :auto-focus="true" :muted="true" :enable-camera="true" :enable-mic="false"
+					:zoom="false" @statechange="statechange" :style="{ width: windowWidth, height: windowHeight }">
+				</live-pusher>
+			</view>
+		</view>
+		<cover-image class="menu-mask" src="/static/border.png"></cover-image>
+	</view>
+</template>
+
+<script>
+	import {
+		pathToBase64
+	} from '../../node_modules/image-tools/index.js'
+	let _this = null;
+	export default {
+		data() {
+			return {
+				poenCarmeInterval: null, //打开相机的轮询
+				aspect: '2:3', //比例
+				windowWidth: '', //屏幕可用宽度
+				windowHeight: '', //屏幕可用高度
+				camerastate: false, //相机准备好了
+				livePusher: null, //流视频对象
+				snapshotsrc: null, //快照,
+				startTime: new Date(),
+				check: false,
+				socket: null,
+				toId: null,
+				open: false,
+				message:'请正对摄像头',
+				title1:'采集要求',
+				title2:'正脸采集，光纤充足，五官清晰'
+			};
+		},
+		onLoad(e) {
+			_this = this;
+			this.initCamera();
+		},
+		onReady() {
+			this.livePusher = uni.createLivePusherContext('livePusher', this);
+			console.log(this.livePusher);
+			this.startPreview(); //开启预览并设置摄像头
+			this.poenCarme();
+			// this.livePusher.switchCamera();
+		},
+		methods: {
+			//轮询打开
+			poenCarme() {
+				//#ifdef APP-PLUS
+				if (plus.os.name == 'Android') {
+					this.poenCarmeInterval = setInterval(function() {
+						// console.log(_this);
+						if (!_this.camerastate) _this.startPreview();
+					}, 2500);
+				}
+				//#endif
+			},
+			//初始化相机
+			initCamera() {
+				uni.getSystemInfo({
+					success: function(res) {
+						_this.windowWidth = res.windowWidth;
+						_this.windowHeight = res.windowHeight;
+						console.log(res)
+						let zcs = _this.aliquot(_this.windowWidth, _this.windowHeight);
+						_this.aspect = (_this.windowWidth / zcs) + ':' + (_this.windowHeight / zcs);
+						console.log('画面比例：' + _this.aspect);
+					}
+				});
+				this.message = `请正对摄像头`;
+			},
+
+			//整除数计算
+			aliquot(x, y) {
+				if (x % y == 0) return y;
+				return this.aliquot(y, x % y);
+			},
+
+			//开始预览
+			startPreview() {
+				this.livePusher.startPreview({
+					success: a => {
+						console.log(a)
+					}
+				});
+			},
+
+			//停止预览
+			stopPreview() {
+				this.livePusher.stopPreview({
+					success: a => {
+						_this.camerastate = false; //标记相机未启动
+					}
+				});
+			},
+
+			//状态
+			statechange(e) {
+				//状态改变
+				console.log(e);
+				if (e.detail.code == 1007) {
+					_this.camerastate = true;
+				} else if (e.detail.code == -1301) {
+					_this.camerastate = false;
+				}
+			},
+
+
+			//返回
+			back() {
+				uni.navigateBack();
+			},
+
+			//抓拍
+			snapshot() {
+		
+			},
+
+			//反转
+			flip() {
+				this.livePusher.switchCamera();
+			},
+
+			//设置
+			setImage() {
+				let pages = getCurrentPages();
+				let prevPage = pages[pages.length - 2]; //上一个页面
+
+				//直接调用上一个页面的setImage()方法，把数据存到上一个页面中去
+				prevPage.$vm.setImage({
+					path: _this.snapshotsrc
+				});
+			}
+		}
+	};
+</script>
+
+<style lang="scss">
+	.page-container {
+		position: absolute;
+		top: 0;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		background-color: red;
+	}
+
+
+	.title1 {
+		position: absolute;
+		top: 0rpx;
+		left: 0rpx;
+		height: 30rpx;
+		width: 280rpx;
+		.message {
+			font-size: 20rpx;
+			color: #3c3c3c;
+			text-align: center;
+		}
+	}
+
+	.live-camera-container {
+		position: absolute;
+		top: 80rpx;
+		left: 95rpx;
+		height: 560rpx;
+		width: 560rpx;
+		background-color: #000;
+	}
+
+	.menu-mask {
+		position: absolute;
+		top: 80rpx;
+		left: 95rpx;
+		height: 560rpx;
+		width: 560rpx;
+		background-color: #000;
+	}
+</style>
+ -->
