@@ -67,7 +67,7 @@
 				//#ifdef APP-PLUS
 				if (plus.os.name == 'Android') {
 					this.poenCarmeInterval = setInterval(function() {
-						// console.log(_this.camerastate);
+						console.log(_this.camerastate);
 						if (!_this.camerastate) _this.startPreview();
 					}, 2500);
 				}
